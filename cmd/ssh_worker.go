@@ -2,16 +2,17 @@ package cmd
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/fatih/color"
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
-	"io/ioutil"
-	"path/filepath"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"path"
+	"path/filepath"
+
+	"github.com/fatih/color"
+	"github.com/pkg/sftp"
+	log "github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
 )
 
 type sshWorker struct {
@@ -73,44 +74,51 @@ func (sw *sshWorker) remoteCopy(src, distDir string) error {
 	}
 	defer srcFile.Close()
 
-	if isDir,err := IsDir(srcFile); err != nil {
+	if isDir, err := IsDir(srcFile); err != nil {
 		return err
 	} else if isDir { // Directory
-		if err := copyDir(sftpClient , src, path.Join(distDir,path.Base(src))); err != nil {
-			return err;
+		if err := copyDir(sftpClient, src, path.Join(distDir, path.Base(src))); err != nil {
+			return err
 		}
 	} else { // File
-		if _,err := copyFile(sftpClient , src, distDir); err != nil {
-			return err;
+		if _, err := copyFile(sftpClient, src, distDir); err != nil {
+			return err
 		}
 	}
 
-	log.Infof("%s copy done! \n" , sw.Addr)
+	log.Infof("%s copy done! \n", sw.Addr)
 
 	return nil
 }
 
-func copyFile(sftpClient *sftp.Client, src, distDir string) (int64,error) {
+func copyFile(sftpClient *sftp.Client, src, distDir string) (int64, error) {
 
 	fileName := filepath.Base(src)
 
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return 0,err;
+		return 0, err
 	}
 	defer srcFile.Close()
 
-	dstFile, err := sftpClient.Create(path.Join(distDir, fileName))
+	fi, _ := srcFile.Stat()
+	perm := fi.Mode()
+	//fmt.Println("PERM:", perm)
+	dstfile := path.Join(distDir, fileName)
+
+	dstFile, err := sftpClient.Create(dstfile)
 	if err != nil {
 		return 0, err
 	}
 	defer dstFile.Close()
 
+	sftpClient.Chmod(dstfile, perm)
+
 	return CopyFile(srcFile, dstFile)
 
 }
 
-func copyDir(sftpClient *sftp.Client, src,distDir string) error {
+func copyDir(sftpClient *sftp.Client, src, distDir string) error {
 
 	files, err := ioutil.ReadDir(src)
 	if err != nil {
@@ -119,16 +127,16 @@ func copyDir(sftpClient *sftp.Client, src,distDir string) error {
 
 	err = sftpClient.Mkdir(distDir)
 	if err != nil && !os.IsExist(err) {
-		return err
+		fmt.Println("Path exist:", distDir)
 	}
 
-	for _,file := range files {
+	for _, file := range files {
 		if file.IsDir() {
-			if err = copyDir(sftpClient,path.Join(src,file.Name()), path.Join(distDir,file.Name())) ; err != nil {
+			if err = copyDir(sftpClient, path.Join(src, file.Name()), path.Join(distDir, file.Name())); err != nil {
 				return err
 			}
 		} else {
-			if _,err = copyFile(sftpClient,path.Join(src,file.Name()), distDir); err != nil {
+			if _, err = copyFile(sftpClient, path.Join(src, file.Name()), distDir); err != nil {
 				return err
 			}
 		}
